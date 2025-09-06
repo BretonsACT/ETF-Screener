@@ -86,8 +86,8 @@ def run_backtest(df):
             
             # --- SELL CONDITIONS ---
             
-            # Condition 1: Take-Profit (5% profit)
-            take_profit_level = entry_price * 1.05
+            # Condition 1: Take-Profit (3% profit)
+            take_profit_level = entry_price * 1.03
             if current_price >= take_profit_level:
                 gain = (current_price - entry_price) / entry_price
                 capital += pos['value'] * (1 + gain)
@@ -265,3 +265,4 @@ if st.button("Analizar ETFs"):
                 st.success("✅ Alertas enviadas por Telegram")
             else:
                 st.info("Ningún ETF cumple las condiciones hoy.")
+
