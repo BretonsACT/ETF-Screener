@@ -86,8 +86,8 @@ def run_backtest(df):
             
             # --- SELL CONDITIONS ---
             
-            # Condition 1: Take-Profit (3% profit)
-            take_profit_level = entry_price * 1.03
+            # Condition 1: Take-Profit (5% profit)
+            take_profit_level = entry_price * 1.05
             if current_price >= take_profit_level:
                 gain = (current_price - entry_price) / entry_price
                 capital += pos['value'] * (1 + gain)
@@ -156,9 +156,20 @@ if st.button("Analizar ETFs"):
         st.info("Descargando datos...")
         try:
             df_full = yf.download(etfs, start=start, end=end, progress=False)
+            
+            # Get ETF names
+            etf_names = {}
+            for ticker in etfs:
+                try:
+                    info = yf.Ticker(ticker).info
+                    etf_names[ticker] = info.get('longName', ticker)
+                except Exception:
+                    etf_names[ticker] = ticker
+                    
         except Exception as e:
             st.error(f"Error al descargar datos: {e}")
             df_full = pd.DataFrame()
+            etf_names = {ticker: ticker for ticker in etfs}
 
         if df_full.empty:
             st.warning("No se encontraron datos para los tickers.")
@@ -195,7 +206,7 @@ if st.button("Analizar ETFs"):
                     sma200 = df["SMA200"].iloc[-1]
                     rsi = df["RSI"].iloc[-1]
                     alerts.append(
-                        f"📉 ETF {ticker} en señal de compra:\n"
+                        f"📉 ETF {ticker} ({etf_names.get(ticker, ticker)}) en señal de compra:\n"
                         f"Precio: {last_price:.2f}\n"
                         f"Drawdown: {drawdown:.2f}%\n"
                         f"SMA50: {sma50:.2f}, SMA200: {sma200:.2f}\n"
@@ -210,7 +221,9 @@ if st.button("Analizar ETFs"):
                 sma200 = df["SMA200"].iloc[-1]
                 rsi = df["RSI"].iloc[-1]
 
-                data[ticker] = {
+                # Use the ETF name in the data dictionary key
+                display_name = f"{ticker} ({etf_names.get(ticker, ticker)})"
+                data[display_name] = {
                     "Precio actual": round(last_price, 2),
                     "Máximo histórico": round(max_price, 2),
                     "Drawdown (%)": round(drawdown, 2),
@@ -223,12 +236,47 @@ if st.button("Analizar ETFs"):
                 # Run backtest
                 initial_capital = 100000
                 final_capital = run_backtest(df.copy())
-                results_backtest[ticker] = {
+                results_backtest[display_name] = {
                     "Rendimiento (%)": (final_capital / initial_capital - 1) * 100
                 }
+            
+            # Move the summary tables to the top
+            st.subheader("📊 Resultados del Screener")
+            df_out = pd.DataFrame(data).T
+            st.dataframe(df_out)
 
-                # ---------------- GRÁFICOS ----------------
-                st.subheader(f"📈 {ticker}")
+            st.subheader("🧪 Resultados del Backtesting")
+            df_backtest = pd.DataFrame(results_backtest).T
+            st.dataframe(df_backtest.style.format({"Rendimiento (%)": "{:.2f}%"}))
+            
+            # Send Telegram alert if there are candidates
+            if alerts:
+                for msg in alerts:
+                    send_telegram(msg)
+                st.success("✅ Alertas enviadas por Telegram")
+            else:
+                st.info("Ningún ETF cumple las condiciones hoy.")
+
+            # ---------------- GRÁFICOS ----------------
+            st.subheader("📈 Gráficos de ETFs")
+            for ticker in etfs:
+                # Handle single ticker data
+                if len(etfs) > 1:
+                    df = df_full['Close'][ticker].dropna().to_frame()
+                    df.columns = ["Close"]
+                    if 'Open' in df_full.columns:
+                        df['Open'] = df_full['Open'][ticker].dropna()
+                else:
+                    df = df_full.dropna().copy()
+
+                if df.empty or len(df) < 200:
+                    continue
+                
+                df["SMA50"] = df["Close"].rolling(50).mean()
+                df["SMA200"] = df["Close"].rolling(200).mean()
+                df["RSI"] = compute_rsi(df["Close"])
+
+                st.subheader(f"📈 {ticker} ({etf_names.get(ticker, ticker)})")
                 col1, col2 = st.columns([2,1])
 
                 # Filter data for the last 2 years
@@ -238,31 +286,12 @@ if st.button("Analizar ETFs"):
                 fig.add_trace(go.Scatter(x=df_last_2_years.index, y=df_last_2_years["Close"], name="Precio", line=dict(color="blue")))
                 fig.add_trace(go.Scatter(x=df_last_2_years.index, y=df_last_2_years["SMA50"], name="SMA50", line=dict(color="orange")))
                 fig.add_trace(go.Scatter(x=df_last_2_years.index, y=df_last_2_years["SMA200"], name="SMA200", line=dict(color="red")))
-                fig.update_layout(title=f"{ticker} - Precio y Medias (Últimos 2 años)", xaxis_title="Fecha", yaxis_title="Precio")
+                fig.update_layout(title=f"{ticker} ({etf_names.get(ticker, ticker)}) - Precio y Medias (Últimos 2 años)", xaxis_title="Fecha", yaxis_title="Precio")
                 col1.plotly_chart(fig, use_container_width=True)
 
                 fig_rsi = go.Figure()
                 fig_rsi.add_trace(go.Scatter(x=df_last_2_years.index, y=df_last_2_years["RSI"], name="RSI", line=dict(color="purple")))
                 fig_rsi.add_hline(y=30, line_dash="dash", line_color="red")
                 fig_rsi.add_hline(y=70, line_dash="dash", line_color="green")
-                fig_rsi.update_layout(title=f"{ticker} - RSI (Últimos 2 años)", xaxis_title="Fecha", yaxis_title="RSI (14)")
+                fig_rsi.update_layout(title=f"{ticker} ({etf_names.get(ticker, ticker)}) - RSI (Últimos 2 años)", xaxis_title="Fecha", yaxis_title="RSI (14)")
                 col2.plotly_chart(fig_rsi, use_container_width=True)
-
-            # ---------------- TABLA RESUMEN ----------------
-            st.subheader("📊 Resultados del Screener")
-            df_out = pd.DataFrame(data).T
-            st.dataframe(df_out)
-
-            # ---------------- RESULTADOS BACKTESTING ----------------
-            st.subheader("🧪 Resultados del Backtesting")
-            df_backtest = pd.DataFrame(results_backtest).T
-            st.dataframe(df_backtest.style.format({"Rendimiento (%)": "{:.2f}%"}))
-
-            # Send Telegram alert if there are candidates
-            if alerts:
-                for msg in alerts:
-                    send_telegram(msg)
-                st.success("✅ Alertas enviadas por Telegram")
-            else:
-                st.info("Ningún ETF cumple las condiciones hoy.")
-
