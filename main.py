@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import streamlit as st
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, roc_curve, roc_auc_score
+from sklearn.metrics import accuracy_score, roc_curve, roc_auc_score
 
 # ---------------------------
 # Streamlit App
@@ -130,18 +130,53 @@ else:
 st.subheader("📌 Final Consensus Signal")
 st.write(f"**{final_signal}**")
 
+# Step 8: Validation Backtest Chart with Signals
+st.subheader("📉 SPY Backtest with Signals")
+
+# Combine predictions into consensus signal for validation set
+consensus = []
+for p1, p2 in zip(predictions1, predictions2):
+    if p1 + p2 == 2:
+        consensus.append(1)
+    elif p1 + p2 == 0:
+        consensus.append(0)
+    else:
+        consensus.append(np.nan)  # Neutral
+
+validation_df = validation_df.copy()
+validation_df['Consensus'] = consensus
+
+fig, ax = plt.subplots(figsize=(10, 5))
+ax.plot(validation_df.index, validation_df['Close'], label='SPY Close', color='blue')
+
+# Mark Buy (UP) and Sell (DOWN)
+ax.scatter(validation_df.index[validation_df['Consensus'] == 1],
+           validation_df['Close'][validation_df['Consensus'] == 1],
+           marker='^', color='green', label='Buy Signal', alpha=0.8)
+
+ax.scatter(validation_df.index[validation_df['Consensus'] == 0],
+           validation_df['Close'][validation_df['Consensus'] == 0],
+           marker='v', color='red', label='Sell Signal', alpha=0.8)
+
+ax.set_title("SPY Validation Period with Consensus Buy/Sell Signals")
+ax.set_xlabel("Date")
+ax.set_ylabel("Price")
+ax.legend()
+st.pyplot(fig)
+
 # Optional: ROC curve for Model 1
+st.subheader("📐 ROC Curve (Model 1)")
 y_pred_prob = model1.predict_proba(X_validation_scaled)[:, 1]
 fpr, tpr, _ = roc_curve(Y_validation_1, y_pred_prob)
 roc_auc = roc_auc_score(Y_validation_1, y_pred_prob)
 
-fig, ax = plt.subplots()
-ax.plot(fpr, tpr, label=f'ROC curve (AUC = {roc_auc:.2f})')
-ax.plot([0, 1], [0, 1], 'k--')
-ax.set_xlim([0.0, 1.0])
-ax.set_ylim([0.0, 1.05])
-ax.set_xlabel('False Positive Rate')
-ax.set_ylabel('True Positive Rate')
-ax.set_title('Receiver Operating Characteristic (Model 1)')
-ax.legend(loc="lower right")
-st.pyplot(fig)
+fig2, ax2 = plt.subplots()
+ax2.plot(fpr, tpr, label=f'ROC curve (AUC = {roc_auc:.2f})')
+ax2.plot([0, 1], [0, 1], 'k--')
+ax2.set_xlim([0.0, 1.0])
+ax2.set_ylim([0.0, 1.05])
+ax2.set_xlabel('False Positive Rate')
+ax2.set_ylabel('True Positive Rate')
+ax2.set_title('Receiver Operating Characteristic (Model 1)')
+ax2.legend(loc="lower right")
+st.pyplot(fig2)
